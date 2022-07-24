@@ -7,13 +7,13 @@ from torch.quantization.fx.quantization_types import QuantizerCls
 from torch.fx.graph import Node
 
 import mqbench.nn as qnn
-import mqbench.nn.intrinsic as qnni
-import mqbench.nn.intrinsic.qat as qnniqat
-from mqbench.utils.fusion import fuse_deconv_bn_eval
-from mqbench.nn.modules import FrozenBatchNorm2d
+import mqbench.nn.intrinsic as qnni  # 包含一些用于融合的中间类，都是继承 Sequential实现，通过把多个的模块比方说 Conv、BN、ReLU三个行成一个ConvBNReLU2D(这个类本质上就是继承了一个Sequential)
+import mqbench.nn.intrinsic.qat as qnniqat # qnniqat包括了一些用来量化感知训练的模块,如ConvBNReLU(和上面的只是名字一样，但是这个可以用来进行量化感知训练)
+from mqbench.utils.fusion import fuse_deconv_bn_eval # 自如其名就是对反卷积和BN之间做一个融合，将BN参数融合进反卷积中，就不用使用BN推断了。
+from mqbench.nn.modules import FrozenBatchNorm2d #
 
 
-class ConvFreezebnReLUFusion(ConvBNReLUFusion):
+class ConvFreezebnReLUFusion(ConvBNReLUFusion): # 冻结了BN的  Conv、BN、ReLU的融合方式。 Fusion类是通过传递Nodes和quantizer来完成量化结点的插入的
     def __init__(self, quantizer: QuantizerCls, node: Node):
         super(ConvBNReLUFusion, self).__init__(quantizer, node)
         self.relu_node = None
@@ -146,10 +146,10 @@ def fuse_deconv_freezebn_relu(deconv, bn, relu):
 
 
 fuse_custom_config_dict = {
-    "additional_fuser_method_mapping": {
-        (torch.nn.Linear, torch.nn.BatchNorm1d): fuse_linear_bn,
-        (torch.nn.ConvTranspose2d, torch.nn.BatchNorm2d): fuse_deconv_bn,
-        (torch.nn.ConvTranspose2d, torch.nn.BatchNorm2d, torch.nn.ReLU): fuse_deconv_bn_relu,
+    "additional_fuser_method_mapping": {# 融合方式映射,这里给出的都是将多个模型，使用一个函数来转化为一个模型(一般是消除BN和ReLU)
+        (torch.nn.Linear, torch.nn.BatchNorm1d): fuse_linear_bn,# 这个方法送入Linear和BatchNorm1D并返回融合后的Linear(注意返回的只是一个Linear)
+        (torch.nn.ConvTranspose2d, torch.nn.BatchNorm2d): fuse_deconv_bn, # 类似于这种和BatchNorm融合的返回的都是另一个
+        (torch.nn.ConvTranspose2d, torch.nn.BatchNorm2d, torch.nn.ReLU): fuse_deconv_bn_relu, # 
         (torch.nn.ConvTranspose2d, torch.nn.ReLU): qnni.ConvTransposeReLU2d,
         (nn.Conv2d, FrozenBatchNorm2d, nn.ReLU): fuse_conv_freezebn_relu,
         (nn.Conv2d, FrozenBatchNorm2d): fuse_conv_freezebn,
@@ -157,7 +157,7 @@ fuse_custom_config_dict = {
         (nn.ConvTranspose2d, FrozenBatchNorm2d): fuse_deconv_freezebn,
     },
     "additional_fusion_pattern": {
-        (torch.nn.BatchNorm1d, torch.nn.Linear):
+        (torch.nn.BatchNorm1d, torch.nn.Linear): # 也是将多个模型进行融合。使用一个Fusion类从一个结点开始追踪并且返回量化结点
         ConvBNReLUFusion,
         (torch.nn.BatchNorm2d, torch.nn.ConvTranspose2d):
         ConvBNReLUFusion,
@@ -178,8 +178,8 @@ fuse_custom_config_dict = {
         (FrozenBatchNorm2d, torch.nn.ConvTranspose2d):
         ConvFreezebnReLUFusion,
     },
-    "additional_qat_module_mappings": {
-        nn.ConvTranspose2d: qnn.qat.ConvTranspose2d,
+    "additional_qat_module_mappings": { # 从一个分组后的模型(比方说LinearBn1D)是一个分组，将这个分组转化为可以被qat量化后的模型(比方说qnniqat.LinearBn1d)
+        nn.ConvTranspose2d: qnn.qat.ConvTranspose2d, 
         qnni.LinearBn1d: qnniqat.LinearBn1d,
         qnni.ConvTransposeBn2d: qnniqat.ConvTransposeBn2d,
         qnni.ConvTransposeReLU2d: qnniqat.ConvTransposeReLU2d,
@@ -194,6 +194,8 @@ fuse_custom_config_dict = {
 
 
 def _sort_fusion_patterns(pats):
+    """ 小函数主要实现的是将MNoduleReLUFusion(即仅仅设计ReLU和另一个模型)放到 pattern列表的最后
+    """
     keys = []
     for key in pats.keys():
         if pats[key] is ModuleReLUFusion:
@@ -204,15 +206,15 @@ def _sort_fusion_patterns(pats):
 
 # Sinse additional_fuser_method_mapping will not be set because fuser.py:54
 # do not pass this dict.
-from torch.quantization.fuser_method_mappings import DEFAULT_OP_LIST_TO_FUSER_METHOD
-from torch.quantization.fx.pattern_utils import DEFAULT_FUSION_PATTERNS
-from torch.quantization.quantization_mappings import DEFAULT_QAT_MODULE_MAPPINGS
-
+from torch.quantization.fuser_method_mappings import DEFAULT_OP_LIST_TO_FUSER_METHOD # 默认的从操作列表到融合方式的映射
+from torch.quantization.fx.pattern_utils import DEFAULT_FUSION_PATTERNS # 默认的融合模式，这个已经买通过一个注册器来实现了
+from torch.quantization.quantization_mappings import DEFAULT_QAT_MODULE_MAPPINGS # 这个QAT-map 从一个普通的模型转化为一个可以被qat量化训练的模型
+# 下面的就是在默认的映射基础上 继续做一些扩充
 DEFAULT_OP_LIST_TO_FUSER_METHOD.update(
     fuse_custom_config_dict['additional_fuser_method_mapping'])
 DEFAULT_FUSION_PATTERNS.update(
     fuse_custom_config_dict['additional_fusion_pattern'])
-# Make longer matched pattern prior.
+# Make longer matched pattern prior. 尽可能长的匹配pattern,这也就是上面sort函数的作用
 # i.e. Conv + BN + Relu should match ConvBnRelu before BNRelu.
 # Any thing registered in class ConvBNReLUFusion should be
 # proir than class ModuleReLUFusion.

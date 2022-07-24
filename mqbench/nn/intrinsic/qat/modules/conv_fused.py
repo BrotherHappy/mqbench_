@@ -21,7 +21,7 @@ _BN_CLASS_MAP = {
     3: nn.BatchNorm3d,
 }
 
-MOD = TypeVar('MOD', bound=nn.modules.conv._ConvNd)
+MOD = TypeVar('MOD', bound=nn.modules.conv._ConvNd) # bound说明可以是子类
 
 
 class _ConvBnNd(nn.modules.conv._ConvNd, _FusedModule):
@@ -57,7 +57,7 @@ class _ConvBnNd(nn.modules.conv._ConvNd, _FusedModule):
             self.bias = Parameter(torch.empty(out_channels))
         else:
             self.register_parameter('bias', None)
-        self.bias_fake_quant = bias_fake_quantizer()
+        self.bias_fake_quant = bias_fake_quantizer() # 追溯回去，它使用的是TqtFakeQuantizer
         self.reset_bn_parameters()
 
         # this needs to be called after reset_bn_parameters,

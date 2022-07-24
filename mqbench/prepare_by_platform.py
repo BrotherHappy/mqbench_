@@ -296,29 +296,36 @@ class CustomedTracer(Tracer):
             return True
         return m.__module__.startswith('torch.nn') and not isinstance(m, torch.nn.Sequential)
 
-def duplicate_reused_nodes(graph: torch.fx.Graph, modules: Dict[str, Any] = {}):
+def duplicate_reused_nodes(graph: torch.fx.Graph, modules: Dict[str, Any] = {}): 
+    """ graph是一个Graph而不是GraphModel,modules相当于用字典存放了所有的 named_modules:包括name和对应的Module
+    """
     _dup_prefix = '_dup'
     target_dict = dict()
     dup_modules = dict()
-    for node in graph.nodes:
-        if node.op == "call_module":
+    for node in graph.nodes: 
+        if node.op == "call_module": # 找到调用模型的节点(即找到node.target=='call_module')，并在target_dict:(dict(list))中加入这个节点            if node.target not in target_dict:
             if node.target not in target_dict:
-                target_dict[node.target] = [node]
+                target_dict[node.target] = [node] # 这里node.target指向一个Module
             else:
                 target_dict[node.target].append(node)
-    for key in target_dict:
+    for key in target_dict: # 对所有操作为'call_module'的  key:Module
         if len(target_dict[key]) > 1:
-            for idx, node in enumerate(target_dict[key]):
+            for idx, node in enumerate(target_dict[key]): # 对所有调用这个Module的 node, 都复制一遍这个Module
                 if idx == 0:
                     continue
                 module = deepcopy(modules[node.target])
-                node.target += _dup_prefix + str(idx)
-                dup_modules[node.target] = module
-    graph.lint()
-    return graph, dup_modules
+                node.target += _dup_prefix + str(idx) # 让node(它调用Module的节点), 的target += '_dup_+idx
+                dup_modules[node.target] = module # 存放被复制的Module,放在字典dup_modules中(key是新的target名字,value就是这个新复制的Module)
+    graph.lint() # 检查Graph，比方说归属问题，拓扑排序这些
+    return graph, dup_modules # 返回graph 和对应的 dup_modules(和modules对应都是存放Module的name作为key，对应的Moduleu作为value)
 
 def prepare_constant_dict(graph: torch.fx.Graph, model: torch.nn.Module):
+    """ model是原来的模型,graph是经过trace后生成的Graph
+    """
     def _get_attrs(target, attrs):
+        """辅助迭代函数,不断的从顶向下访问需要的属性.首先将attrs按照.分开,
+        然后从target(target一开始等于model,如果把一个model看作是一个树的话,model相当于根节点)开始按照attrs访问attr,同时更新当前target
+        """
         attrs = attrs.split('.')
         for att in attrs:
             target = getattr(target, att)
@@ -326,7 +333,7 @@ def prepare_constant_dict(graph: torch.fx.Graph, model: torch.nn.Module):
     constant_dict = dict()
     for node in graph.nodes:
         if node.op == 'get_attr':
-            constant_dict[node.target] = _get_attrs(model, node.target)
+            constant_dict[node.target] = _get_attrs(model, node.target) # 根据target指向的属性，来迭代访问属性.并使用(k=node.target,v=具体的属性变量)来保存存储。
     return constant_dict
 
 
@@ -360,8 +367,8 @@ def prepare_by_platform(
     extra_qconfig_dict = prepare_custom_config_dict.get('extra_qconfig_dict', {})
     qconfig = get_qconfig_by_platform(deploy_backend, extra_qconfig_dict)
 
-    _swap_ff_with_fxff(model)
-    # Preserve attr.
+    _swap_ff_with_fxff(model) # 单纯的将一些FloatFunctional操作替换为FXFloatFunctional
+    # Preserve attr. 保留属性
     preserve_attr_dict = dict()
     if 'preserve_attr' in prepare_custom_config_dict:
         for submodule_name in prepare_custom_config_dict['preserve_attr']:
@@ -372,7 +379,7 @@ def prepare_by_platform(
             preserve_attr_dict[submodule_name] = {}
             for attr in preserve_attr_list:
                 preserve_attr_dict[submodule_name][attr] = getattr(cur_module, attr)
-    # Symbolic trace
+    # Symbolic trace 自定义trace，从concrete_args传trace的参数，leaf_module传不需要trace的模型
     concrete_args = prepare_custom_config_dict.get('concrete_args', None)
     customed_leaf_module = prepare_custom_config_dict.get('leaf_module', [])
     tracer = CustomedTracer(customed_leaf_module=tuple(customed_leaf_module))
@@ -381,20 +388,21 @@ def prepare_by_platform(
     graph = tracer.trace(model, concrete_args)
     name = model.__class__.__name__ if isinstance(model, torch.nn.Module) else model.__name__
     modules = dict(model.named_modules())
-    graph, duplicated_modules = duplicate_reused_nodes(graph, modules)
-    constant_nodes = prepare_constant_dict(graph, model)
-    modules.update(duplicated_modules)
+    graph, duplicated_modules = duplicate_reused_nodes(graph, modules) # 复制存在重复用的调用Module的Node(),并且对调用这个Module的nodes每一个复制一份Module并让node.target指向这个新Module
+    constant_nodes = prepare_constant_dict(graph, model) # 对所有getattr (node.op='getattr') 节点，用constant_nodes提前访问好这些属性,并也用(name,attrbutation)的方式进行存储访问
+    modules.update(duplicated_modules) # 将duplicated_modules和constant_nodes融入到
     modules.update(constant_nodes)
-    graph_module = GraphModule(modules, graph, name)
-    # Model fusion.
+    graph_module = GraphModule(modules, graph, name) # GraphModule第一个参数可以是一个Module也可以是一个dict(存放了(str、对应的值),还有类名). GraphModule也有modules
+    # Model fusion. 模型融合
     extra_fuse_dict = prepare_custom_config_dict.get('extra_fuse_dict', {})
     extra_fuse_dict.update(fuse_custom_config_dict)
     # Prepare
-    import mqbench.custom_quantizer  # noqa: F401
+    import mqbench.custom_quantizer  # noqa: F401  在导入的时候就会执行装饰器函数
     extra_quantizer_dict = prepare_custom_config_dict.get('extra_quantizer_dict', {})
-    quantizer = DEFAULT_MODEL_QUANTIZER[deploy_backend](extra_quantizer_dict, extra_fuse_dict)
+    quantizer = DEFAULT_MODEL_QUANTIZER[deploy_backend](extra_quantizer_dict, extra_fuse_dict) # 使用 当前Backend对应的ModelQuantizer并传入额外的量化配置字典和融合字典来生成quantizer
+    # print(quantizer)
     prepared = quantizer.prepare(graph_module, qconfig)
-    # Restore attr.
+    # Restore attr. # 虽然可以恢复属性，但是在网络的更新中应该不能更新这些属性
     if 'preserve_attr' in prepare_custom_config_dict:
         for submodule_name in prepare_custom_config_dict['preserve_attr']:
             cur_module = prepared

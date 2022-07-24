@@ -48,9 +48,9 @@ class ModelQuantizer(object):
     """
 
     def __init__(self, extra_quantizer_dict, extra_fuse_dict):
-        self.additional_function_type = extra_quantizer_dict.get('additional_function_type', [])
+        self.additional_function_type = extra_quantizer_dict.get('additional_function_type', []) # 额外需要量化的function类型、model类型
         self.additional_module_type = extra_quantizer_dict.get('additional_module_type', ())
-        self.additional_fuser_method_mapping = extra_fuse_dict.get('additional_fuser_method_mapping', {})
+        self.additional_fuser_method_mapping = extra_fuse_dict.get('additional_fuser_method_mapping', {})# 额外需要融合的融合方法和融合模式
         self.additional_fusion_pattern = extra_fuse_dict.get('additional_fusion_pattern', {})
         self.additional_qat_module_mapping = extra_fuse_dict.get('additional_qat_module_mapping', {})
         self.additional_node_name = extra_quantizer_dict.get('additional_node_name', [])
@@ -60,9 +60,9 @@ class ModelQuantizer(object):
         self.extra_fuse_dict = extra_fuse_dict
 
     def prepare(self, model: GraphModule, qconfig):
-        model = _fuse_fx(model, self.extra_fuse_dict)
-        model = self._weight_quant(model, qconfig)
-        model = self._insert_fake_quantize_for_act_quant(model, qconfig)
+        model = _fuse_fx(model, self.extra_fuse_dict) # 准确量化模型前，先进行一些图模型的融合
+        model = self._weight_quant(model, qconfig) # 对权重进行量化, 主要是将module转化为qatModule
+        model = self._insert_fake_quantize_for_act_quant(model, qconfig) # 这里就是对graph进行修改了，然后插入伪量化结点
         return model
 
     def _insert_fake_quantize_for_act_quant(
@@ -72,12 +72,12 @@ class ModelQuantizer(object):
         graph = model.graph
         nodes = list(model.graph.nodes)
 
-        quantizer_prefix = "_post_act_fake_quantizer"
-        node_to_quantize_output = self._find_act_quants(model)
-        node_to_quantize_output = OrderedDict.fromkeys(node_to_quantize_output).keys()
+        quantizer_prefix = "_post_act_fake_quantizer" # 后激活伪量化的后缀
+        node_to_quantize_output = self._find_act_quants(model) # 找到所有需要量化的结点，相当于对它们的输出进行量化。
+        node_to_quantize_output = OrderedDict.fromkeys(node_to_quantize_output).keys() # 
 
         for node in node_to_quantize_output:
-            fake_quantizer = qconfig.activation()
+            fake_quantizer = qconfig.activation() # 通过 量化的配置实例qconfig 的activation()方法
             quantizer_name = node.name + quantizer_prefix
             setattr(model, quantizer_name, fake_quantizer)
             logger.info("Insert act quant {}".format(quantizer_name))
@@ -119,10 +119,10 @@ class ModelQuantizer(object):
             raise NotImplementedError('{} can not be handled now.'.format(type(args)))
 
     def _weight_quant(self, model: GraphModule, qconfig):
-        logger.info("Replace module to qat module.")
+        logger.info("Replace module to qat module.")# 对权重进行量化就会把有参数的module，都转换为 qat Module
         flattened_qconfig_dict = get_flattened_qconfig_dict({'': qconfig})
-        propagate_qconfig_(model, flattened_qconfig_dict)
-        self._qat_swap_modules(model, self.additional_qat_module_mapping)
+        propagate_qconfig_(model, flattened_qconfig_dict) # 这个传播量化配置在model的级别下进行
+        self._qat_swap_modules(model, self.additional_qat_module_mapping) # 将模型置换为qat的可训练模型。 备注置换操作都不需要改变graph
         return model
 
     @property
@@ -175,33 +175,34 @@ class ModelQuantizer(object):
     @property
     def function_type_to_quant_input(self) -> list:
         return [
-            operator.add,
-            operator.mul,
-            torch.nn.functional.adaptive_avg_pool2d,
-            torch.nn.functional.interpolate
+            # operator.add,
+            # operator.mul,
+            torch.matmul,
+            # torch.nn.functional.adaptive_avg_pool2d,
+            # torch.nn.functional.interpolate
         ] + self.additional_function_type
 
     @property
     def module_type_to_quant_input(self) -> tuple:
         return (
-            # Conv
-            torch.nn.intrinsic.qat.modules.conv_fused.ConvBnReLU2d,
-            torch.nn.intrinsic.qat.modules.conv_fused.ConvBn2d,
-            torch.nn.qat.modules.conv.Conv2d,
-            # ConvTranspose
-            torch.nn.ConvTranspose2d,
-            # Linear
-            torch.nn.qat.modules.linear.Linear,
-            # Pooling
-            torch.nn.modules.pooling.MaxPool2d,
-            torch.nn.modules.pooling.AvgPool2d,
-            torch.nn.modules.pooling.AdaptiveAvgPool2d,
-            # BN
-            torch.nn.BatchNorm2d,
-            # Prelu mostly do not merge.
-            torch.nn.PReLU,
-            # Upsample
-            torch.nn.Upsample
+            # # Conv
+            # torch.nn.intrinsic.qat.modules.conv_fused.ConvBnReLU2d, # 因为会做融合，所以不需要ReLU
+            # torch.nn.intrinsic.qat.modules.conv_fused.ConvBn2d,
+            # torch.nn.qat.modules.conv.Conv2d,
+            # # ConvTranspose
+            # torch.nn.ConvTranspose2d,
+            # # Linear
+            # torch.nn.qat.modules.linear.Linear,
+            # # Pooling
+            # torch.nn.modules.pooling.MaxPool2d,
+            # torch.nn.modules.pooling.AvgPool2d,
+            # torch.nn.modules.pooling.AdaptiveAvgPool2d,
+            # # BN
+            # torch.nn.BatchNorm2d,
+            # # Prelu mostly do not merge.
+            # torch.nn.PReLU,
+            # # Upsample
+            # torch.nn.Upsample
         ) + self.additional_module_type
 
     def _flatten_args(self, node):
@@ -216,12 +217,12 @@ class ModelQuantizer(object):
             flattned_args.extend([node])
         return flattned_args
 
-    def _find_act_quants(self, model: GraphModule) -> List:
-        nodes = list(model.graph.nodes)
+    def _find_act_quants(self, model: GraphModule) -> List: # 找需要量化的节点
+        nodes = list(model.graph.nodes) 
         modules = dict(model.named_modules())
-        node_need_to_quantize_output = []
+        node_need_to_quantize_output = [] # 
         for node in nodes:
-            if ((node.op == "call_module" and node.target in self.exclude_module_name) or
+            if ((node.op == "call_module" and node.target in self.exclude_module_name) or # 不加入
                 ((node.op == 'call_function' or node.op == 'call_method') and
                  node.target in self.exclude_function_type) or
                     node.name in self.exclude_node_name) and node.name not in self.additional_node_name:
@@ -229,12 +230,12 @@ class ModelQuantizer(object):
                 continue
             if (node.op == "call_module" and isinstance(modules[node.target], self.module_type_to_quant_input)) or \
                 ((node.op == 'call_function' or node.op == 'call_method') and
-                    node.target in self.function_type_to_quant_input) or node.name in self.additional_node_name:
-                input_node_list = self._flatten_args(node.args)
+                    node.target in self.function_type_to_quant_input) or node.name in self.additional_node_name: # 找需要加入的(node.op.target是我想要量化的)
+                input_node_list = self._flatten_args(node.args) # 找到这个node的 args(相当于依赖的输入参数)
                 # Means this is not Tensor + Tensor.
-                if not all([isinstance(_node, torch.fx.node.Node) for _node in input_node_list]):
+                if not all([isinstance(_node, torch.fx.node.Node) for _node in input_node_list]): # 
                     continue
-                for _node in input_node_list:
+                for _node in input_node_list: # 对每个输入参数，如果它被隐式的包括了，就不会被加入到需要被量化输出的act结点,否则就加入需要被量化的结点
                     if self._is_implicit_merge(modules, (node, _node)):
                         logger.info("Implicit merge: {} + {}".format(_node.name, node.name))
                         continue
@@ -242,9 +243,9 @@ class ModelQuantizer(object):
         return node_need_to_quantize_output
 
     def _qat_swap_modules(self, root: GraphModule, additional_qat_module_mapping: Dict[Callable, Callable]):
-        all_mappings = get_combined_dict(
+        all_mappings = get_combined_dict(# 得到模型置换的转化的映射字典
             get_default_qat_module_mappings(), additional_qat_module_mapping)
-        root = self._convert(root, all_mappings, inplace=True)
+        root = self._convert(root, all_mappings, inplace=True) # 得到置换后的模型。
         return root
 
     def _convert(self, module, mapping=None, inplace=False, scope=''):
@@ -252,22 +253,22 @@ class ModelQuantizer(object):
             mapping = get_default_static_quant_module_mappings()
 
         if not inplace:
-            module = copy.deepcopy(module)
+            module = copy.deepcopy(module) # 如果不是Inplace就深拷贝
         reassign = {}
-        for name, mod in module.named_children():
+        for name, mod in module.named_children():# 对子进行递归调用，如果已经没有子模型了，就会直接跳过 TODO 存在bug，如果模型只有一层Linear，就不会被量化
             # fused modules are swapped as one unit
-            new_scope = "{}.{}".format(scope, name) if scope != '' else name
-            if new_scope in self.exclude_module_name:
+            new_scope = "{}.{}".format(scope, name) if scope != '' else name # 更新scope
+            if new_scope in self.exclude_module_name: # 跳过一些模块的置换
                 logger.info("Skip quant layer: " + new_scope)
                 continue
-            if not isinstance(mod, _FusedModule):
+            if not isinstance(mod, _FusedModule):# _FusedModule继承了Sequential(仅仅当做一个特殊的标记而已),如果不是就递归调用_convert。指定新scope
                 self._convert(mod, mapping, True, new_scope)
-            reassign[name] = swap_module(mod, mapping, {})
-            if isinstance(mod, torch.nn.ConvTranspose2d):
+            reassign[name] = swap_module(mod, mapping, {}) # 用resign来保存置换过后的 模型(从一般的办成了QAT模型). 
+            if isinstance(mod, torch.nn.ConvTranspose2d): # 对反卷积做特殊对待
                 if hasattr(reassign[name], "weight_fake_quant") and reassign[name].weight_fake_quant.ch_axis != -1:
                     reassign[name].weight_fake_quant.ch_axis = 1
                     reassign[name].weight_fake_quant.activation_post_process.ch_axis = 1
-        for key, value in reassign.items():
+        for key, value in reassign.items(): # 进行这一层的置换工作
             module._modules[key] = value
 
         return module

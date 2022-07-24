@@ -32,12 +32,12 @@ class DataSaverHook:
 
 class PerChannelLoadHook:
     def __init__(self, module, hook_param=["scale", "zero_point"]):
-        self.hook = module._register_load_state_dict_pre_hook(partial(self.hook_fn, module=module))
+        self.hook = module._register_load_state_dict_pre_hook(partial(self.hook_fn, module=module)) # 将hook注册进 QAT模型的 加载状态字典前执行hook。这里用到了偏函数
         self.hook_param = hook_param
 
     def hook_fn(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs,
-                module):
-        if module.ch_axis == -1:
+                module):# 其中self已经固定，module将会被partial装饰为偏函数来固定。 这样的话剩下的参数就跟hook要求的参数一致了
+        if module.ch_axis == -1: # 判断是否是per-channel方式
             # no per-channel parameters
             return
         for module_key, param in module._parameters.items():

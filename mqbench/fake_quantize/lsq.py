@@ -17,8 +17,8 @@ class LearnableFakeQuantize(QuantizeBase):
 
     def __init__(self, observer, scale=1., zero_point=0., use_grad_scaling=True, **observer_kwargs):
         super(LearnableFakeQuantize, self).__init__(observer, **observer_kwargs)
-        self.use_grad_scaling = use_grad_scaling
-        self.scale = Parameter(torch.tensor([scale]))
+        self.use_grad_scaling = use_grad_scaling # 是否使用梯度放缩
+        self.scale = Parameter(torch.tensor([scale])) # 看到了这里的scale和zero_point都是使用Parameter说明这些都是可以学习的，
         self.zero_point = Parameter(torch.tensor([zero_point]))
         self.register_buffer('eps', torch.tensor([torch.finfo(torch.float32).eps]))
         # Check whether the module will load a state dict;
@@ -37,6 +37,7 @@ class LearnableFakeQuantize(QuantizeBase):
 
     def forward(self, X):
         # Learnable fake quantize have to zero_point.float() to make it learnable.
+        if isinstance(X,int): return  X
         if self.observer_enabled[0] == 1:
             self.activation_post_process(X.detach())
             _scale, _zero_point = self.activation_post_process.calculate_qparams()

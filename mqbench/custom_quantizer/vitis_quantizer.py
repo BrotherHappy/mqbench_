@@ -37,50 +37,52 @@ class VitisQuantizer(ModelQuantizer):
     @property
     def module_type_to_quant_input(self) -> tuple:
         return super().module_type_to_quant_input + (
-            torch.nn.Conv2d,
-            qnni.ConvBn2d, 
-            qnni.ConvReLU2d,
-            qnni.ConvBnReLU2d
+            # torch.nn.Conv2d,
+            # qnni.ConvBn2d, 
+            # qnni.ConvReLU2d,
+            # qnni.ConvBnReLU2d
         )
 
     @property
     def module_type_to_quant_output(self) -> tuple:
         return (
             # Conv
-            torch.nn.intrinsic.qat.modules.conv_fused.ConvBnReLU2d,
-            torch.nn.intrinsic.qat.modules.conv_fused.ConvBn2d,
-            torch.nn.qat.modules.conv.Conv2d,
-            qnniqat.ConvBnReLU2d,
-            qnniqat.ConvBn2d,
-            qnniqat.ConvReLU2d,
-            # ConvTranspose
-            torch.nn.ConvTranspose2d,
-            # Linear
-            torch.nn.qat.modules.linear.Linear,
-            # Pooling
-            torch.nn.modules.pooling.AvgPool2d,
-            torch.nn.modules.pooling.AdaptiveAvgPool2d,
-            # BN
-            torch.nn.BatchNorm2d,
-            torch.nn.ReLU,
-            # Prelu mostly do not merge.
-            torch.nn.PReLU,
-            torch.nn.Upsample,
+            # torch.nn.intrinsic.qat.modules.conv_fused.ConvBnReLU2d,
+            # torch.nn.intrinsic.qat.modules.conv_fused.ConvBn2d,
+            # torch.nn.qat.modules.conv.Conv2d,
+            # qnniqat.ConvBnReLU2d,
+            # qnniqat.ConvBn2d,
+            # qnniqat.ConvReLU2d,
+            # # ConvTranspose
+            # torch.nn.ConvTranspose2d,
+            # # Linear
+            # torch.nn.qat.modules.linear.Linear,
+            # # Pooling
+            # torch.nn.modules.pooling.AvgPool2d,
+            # torch.nn.modules.pooling.AdaptiveAvgPool2d,
+            # # BN
+            # torch.nn.BatchNorm2d,
+            # torch.nn.ReLU,
+            # torch.nn.GELU,
+            # # Prelu mostly do not merge.
+            # torch.nn.PReLU,
+            # torch.nn.Upsample,
         ) 
 
 
     @property
     def function_type_to_quant_output(self) -> List:
         return [
-            operator.add,
-            operator.mul,
-            torch.cat,
-            torch.nn.functional.adaptive_avg_pool2d,
-            torch.nn.functional.avg_pool2d,
-            torch.nn.functional.relu,
-            torch.nn.functional.conv2d,
-            torch.nn.functional.linear,
-            torch.nn.functional.interpolate,
+            # operator.add,
+            # operator.mul,
+            # torch.cat,
+            torch.matmul,
+            # torch.nn.functional.adaptive_avg_pool2d,
+            # torch.nn.functional.avg_pool2d,
+            # torch.nn.functional.relu,
+            # torch.nn.functional.conv2d,
+            # torch.nn.functional.linear,
+            # torch.nn.functional.interpolate,
         ] 
 
     def prepare(self, model: GraphModule, qconfig):

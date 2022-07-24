@@ -2,7 +2,7 @@ from torch.nn.intrinsic import _FusedModule
 from torch.nn import Linear, BatchNorm1d, BatchNorm2d, ReLU, ConvTranspose2d, Conv2d
 from mqbench.nn.modules import FrozenBatchNorm2d
 
-class LinearBn1d(_FusedModule):
+class LinearBn1d(_FusedModule): # 都是序列容易同时存储了两个以及以上的连续的模块。方便做后续的融合使用。
     r"""This is a sequential container which calls the Linear and Batch Norm 1d modules.
     During quantization this will be replaced with the corresponding fused module."""
     def __init__(self, linear, bn):
