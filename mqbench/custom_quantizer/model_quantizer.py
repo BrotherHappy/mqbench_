@@ -60,8 +60,8 @@ class ModelQuantizer(object):
         self.extra_fuse_dict = extra_fuse_dict
 
     def prepare(self, model: GraphModule, qconfig):
-        model = _fuse_fx(model, self.extra_fuse_dict) # 准确量化模型前，先进行一些图模型的融合
-        model = self._weight_quant(model, qconfig) # 对权重进行量化, 主要是将module转化为qatModule
+        model = _fuse_fx(model, self.extra_fuse_dict) # 准确量化模型前，先进行一些图模型的融合 
+        model = self._weight_quant(model, qconfig) # 对权重进行量化, 主要是将module转化为qatModule  
         model = self._insert_fake_quantize_for_act_quant(model, qconfig) # 这里就是对graph进行修改了，然后插入伪量化结点
         return model
 
@@ -79,14 +79,14 @@ class ModelQuantizer(object):
         for node in node_to_quantize_output:
             fake_quantizer = qconfig.activation() # 通过 量化的配置实例qconfig 的activation()方法
             quantizer_name = node.name + quantizer_prefix
-            setattr(model, quantizer_name, fake_quantizer)
-            logger.info("Insert act quant {}".format(quantizer_name))
-            with graph.inserting_after(node):
-                inserted_node = graph.create_node("call_module", quantizer_name, (node,), {})
-                for _node in nodes:
+            setattr(model, quantizer_name, fake_quantizer) # 让其包含这个 量化类的属性
+            logger.info("Insert act quant {}".format(quantizer_name)) # 
+            with graph.inserting_after(node): # 在这个节点后插入
+                inserted_node = graph.create_node("call_module", quantizer_name, (node,), {}) # 插入 call_module 节点(这个节点的输入参数是node,输出是)
+                for _node in nodes: # 插入这个节点以后，还需要将原来使用node作为输入的结点都变成以 inserted_node作为输入,即调用如下函数
                     _node.args = self._fix_succ_recursivly(_node.args, node, inserted_node)
 
-        model.recompile()
+        model.recompile() # 检查一下有没有问题啥的
         model.graph.lint()
         return model
 
@@ -133,8 +133,8 @@ class ModelQuantizer(object):
             (operator.add, operator.mul)
         ]
 
-    def _on_merge_chain(self, modules, pattern, pair, p_pos=0, v_pos=0):
-        if v_pos == len(pair):
+    def _on_merge_chain(self, modules, pattern, pair, p_pos=0, v_pos=0): # 其中，p_pos表示pattern的索引,v_pos表示变量结点的索引
+        if v_pos == len(pair): # 如果变量结点的索引等于pair的长度
             return True
         if p_pos == len(pattern):
             return v_pos == len(pair)
@@ -142,10 +142,10 @@ class ModelQuantizer(object):
         cur_pattern = pattern[p_pos]
         # Means current node is matched.
         if (node.op == "call_module" and type(modules[node.target]) == cur_pattern) or \
-                ((node.op == 'call_function' or node.op == 'call_method') and
+                ((node.op == 'call_function' or node.op == 'call_method') and # 判断当前节点的target是否符合当前的模式
                     node.target == cur_pattern):
             # Means compairing pair.
-            if len(pattern) > p_pos and len(pair) > v_pos:
+            if len(pattern) > p_pos and len(pair) > v_pos: # 如果模式长度大于当前索引并且 pair长度大于v_pos,
                 return self._on_merge_chain(modules, pattern, pair, p_pos + 1, v_pos + 1)
             # Means compairing extra node.
             matched = False
@@ -161,7 +161,7 @@ class ModelQuantizer(object):
             return self._on_merge_chain(modules, pattern, pair, p_pos + 1, v_pos)
 
     def _is_implicit_merge(self, modules, pair):
-        for pattern in self.implicit_merge_patterns:
+        for pattern in self.implicit_merge_patterns: # 判断是否在合并链上，如果在，就返回true。 # 当前的合并为(+,*)这个两个符号
             if self._on_merge_chain(modules, pattern, pair):
                 return True
         return False
@@ -175,37 +175,41 @@ class ModelQuantizer(object):
     @property
     def function_type_to_quant_input(self) -> list:
         return [
-            # operator.add,
-            # operator.mul,
+            # operator.add, # type(operator.add) == type(torch.add)
+            # operator.mul, 
+            # torch.add,
+            # torch.mul,
             torch.matmul,
-            # torch.nn.functional.adaptive_avg_pool2d,
+            # torch.nn.functional.adaptive_avg_pool2d, # 
             # torch.nn.functional.interpolate
         ] + self.additional_function_type
 
     @property
     def module_type_to_quant_input(self) -> tuple:
         return (
-            # # Conv
+            # Conv
             # torch.nn.intrinsic.qat.modules.conv_fused.ConvBnReLU2d, # 因为会做融合，所以不需要ReLU
-            # torch.nn.intrinsic.qat.modules.conv_fused.ConvBn2d,
+            # torch.nn.intrinsic.qat.modules.conv_fused.ConvBn2d,     # 
             # torch.nn.qat.modules.conv.Conv2d,
-            # # ConvTranspose
-            # torch.nn.ConvTranspose2d,
-            # # Linear
+            # ConvTranspose
+            torch.nn.ConvTranspose2d,
+            # Linear
             # torch.nn.qat.modules.linear.Linear,
-            # # Pooling
-            # torch.nn.modules.pooling.MaxPool2d,
-            # torch.nn.modules.pooling.AvgPool2d,
-            # torch.nn.modules.pooling.AdaptiveAvgPool2d,
-            # # BN
-            # torch.nn.BatchNorm2d,
-            # # Prelu mostly do not merge.
-            # torch.nn.PReLU,
-            # # Upsample
-            # torch.nn.Upsample
+            # Pooling
+            torch.nn.modules.pooling.MaxPool2d,
+            torch.nn.modules.pooling.AvgPool2d,
+            torch.nn.modules.pooling.AdaptiveAvgPool2d,
+            # BN
+            torch.nn.BatchNorm2d,
+            # Prelu mostly do not merge.
+            torch.nn.PReLU,
+            # Upsample
+            torch.nn.Upsample
         ) + self.additional_module_type
 
     def _flatten_args(self, node):
+        """ 将参数扩散，成为一个列表,不同等级的都在一个列表中
+        """
         flattned_args = []
         if isinstance(node, dict):
             for v in node.values():
@@ -222,7 +226,7 @@ class ModelQuantizer(object):
         modules = dict(model.named_modules())
         node_need_to_quantize_output = [] # 
         for node in nodes:
-            if ((node.op == "call_module" and node.target in self.exclude_module_name) or # 不加入
+            if ((node.op == "call_module" and node.target in self.exclude_module_name) or # 在指定的 exclude列表中则不考虑
                 ((node.op == 'call_function' or node.op == 'call_method') and
                  node.target in self.exclude_function_type) or
                     node.name in self.exclude_node_name) and node.name not in self.additional_node_name:
@@ -235,8 +239,8 @@ class ModelQuantizer(object):
                 # Means this is not Tensor + Tensor.
                 if not all([isinstance(_node, torch.fx.node.Node) for _node in input_node_list]): # 
                     continue
-                for _node in input_node_list: # 对每个输入参数，如果它被隐式的包括了，就不会被加入到需要被量化输出的act结点,否则就加入需要被量化的结点
-                    if self._is_implicit_merge(modules, (node, _node)):
+                for _node in input_node_list: # 对每个输入参数，如果它被隐式的包括了，就不会被加入到需要被量化输出的act结点,否则就加入需要被量化的结点 # 目前看到的模式是(torch.add,torch.mul)
+                    if self._is_implicit_merge(modules, (node, _node)): # 如果node是+并且_node是乘法,那么会被判定为隐式合并 (TODO 不懂为什么这么做)
                         logger.info("Implicit merge: {} + {}".format(_node.name, node.name))
                         continue
                     node_need_to_quantize_output.append(_node)

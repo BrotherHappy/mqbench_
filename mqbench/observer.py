@@ -9,7 +9,7 @@ from mqbench.utils import sync_tensor, pot_quantization, is_symmetric_quant
 from mqbench.utils.logger import logger
 
 
-class ObserverBase(_ObserverBase):
+class ObserverBase(_ObserverBase): # 继承了pytorch的_ObserverBase
     '''
         Support per-tensor / per-channel.
         dtype: quant min/max can be infered using dtype, we actually do not need this.
@@ -29,7 +29,7 @@ class ObserverBase(_ObserverBase):
                  reduce_range=False, quant_min=None, quant_max=None, ch_axis=-1, pot_scale=False,
                  factory_kwargs=None):
         factory_kwargs = deepcopy(factory_kwargs)
-        self.not_calc_quant_min_max = factory_kwargs.pop('not_calc_quant_min_max', False) if isinstance(factory_kwargs, dict) else False
+        self.not_calc_quant_min_max = factory_kwargs.pop('not_calc_quant_min_max', False) if isinstance(factory_kwargs, dict) else False # 这个变量表示是否需要计算min max而是指定
         super(ObserverBase, self).__init__(dtype, qscheme, reduce_range, quant_min, quant_max)
         # for compatibility with 1.10, prevent the value of self.quant_min,self.quant_max being modified
         self.quant_min = quant_min
@@ -48,11 +48,11 @@ class ObserverBase(_ObserverBase):
                         module):
                 if module.ch_axis == -1:
                     # no per-channel parameters
-                    return
-                for module_key, param in module._buffers.items():
+                    return # 直接返回
+                for module_key, param in module._buffers.items(): # 
                     if module_key not in ['min_val', 'max_val']:
                         continue
-                    candidate = prefix + module_key
+                    candidate = prefix + module_key # 
                     if candidate in state_dict:
                         input_param = state_dict[candidate]
                         if param.shape != input_param.shape:
@@ -61,16 +61,16 @@ class ObserverBase(_ObserverBase):
             def close(self):
                 self.hook.remove()
 
-        self.load_state_dict_hook = PerChannelLoadHook(self)
+        self.load_state_dict_hook = PerChannelLoadHook(self) # 加载状态字典hook,
 
     @torch.jit.export
     def calculate_qparams(self) -> Tuple[torch.Tensor, torch.Tensor]:
         r"""Calculates the quantization parameters."""
         scale, zero_point = self._calculate_qparams(self.min_val, self.max_val)
-        scale.data = sync_tensor(scale).data
-        zero_point.data = sync_tensor(zero_point).data
-        if self.pot_scale:
-            scale = pot_quantization(scale)
+        scale.data = sync_tensor(scale).data # 只用于多线程
+        zero_point.data = sync_tensor(zero_point).data # 
+        if self.pot_scale: # 如果使用power of two 模式，就近似一下2的指数
+            scale = pot_quantization(scale) # 
         return scale, zero_point
 
     @torch.jit.export
@@ -248,7 +248,7 @@ class EMAMinMaxObserver(ObserverBase):
         r"""Records the running minimum and maximum of ``x``."""
         if x_orig.numel() == 0:
             return x_orig
-        x = x_orig.to(self.min_val.dtype)
+        x = x_orig.to(self.min_val.dtype) #
         if self.ch_axis == -1:
             min_val_cur, max_val_cur = torch._aminmax(x)
         else:
@@ -656,7 +656,7 @@ class EMAMSEObserver(ObserverBase):
         r"""Records the running minimum and maximum of ``x``."""
         if x_orig.numel() == 0:
             return x_orig
-        x = x_orig.clone().detach().to(self.min_val.dtype)
+        x = x_orig.clone().detach().to(self.min_val.dtype) # 
         if self.ch_axis == -1:
             min_val_cur, max_val_cur = torch._aminmax(x)
             min_val_cur, max_val_cur = self.mse(x, min_val_cur, max_val_cur, iter=95)
@@ -670,7 +670,7 @@ class EMAMSEObserver(ObserverBase):
             min_val_cur, max_val_cur = torch._aminmax(y, 1)
             min_val_cur, max_val_cur = self.mse_perchannel(x, min_val_cur, max_val_cur, iter=80, ch_axis=self.ch_axis)
 
-        if self.max_val.numel() <= 1 and self.max_val.isinf():
+        if self.max_val.numel() <= 1 and self.max_val.isinf(): # 
             self.min_val = min_val_cur
             self.max_val = max_val_cur
         else:

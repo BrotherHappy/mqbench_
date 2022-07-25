@@ -8,10 +8,10 @@ def enable_calibration(model):
     for name, submodule in model.named_modules():
         if isinstance(submodule, torch.quantization.FakeQuantizeBase):
             logger.debug('Enable observer and Disable quant: {}'.format(name))
-            submodule.enable_observer()
+            submodule.enable_observer() # 允许校准就是为了打开校准标志并且关闭量化标志
             submodule.disable_fake_quant()
 
-def enable_calibration_woquantization(model, quantizer_type='fake_quant'):
+def enable_calibration_woquantization(model, quantizer_type='fake_quant'): #
     logger.info('Enable observer and Disable quantize for {}'.format(quantizer_type))
     for name, submodule in model.named_modules():
         if isinstance(submodule, torch.quantization.FakeQuantizeBase):

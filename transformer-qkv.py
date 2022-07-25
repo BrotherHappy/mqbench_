@@ -1,4 +1,4 @@
-import mqbench,torch,torchvision,numpy as np,matplotlib.pyplot as plt,torchvision,torchvision.models as models,timm,timm.models as models
+import mqbench,torch,torchvision,numpy as np,matplotlib.pyplot as plt,torchvision,torchvision.models as models,timm,timm.models as models,torch.nn as nn
 from torchmetrics import ConfusionMatrix
 from mqbench.prepare_by_platform import prepare_by_platform
 from mqbench.prepare_by_platform import BackendType
@@ -9,6 +9,7 @@ from tqdm import tqdm
 from mqbench.utils.logger import logger as log
 from mqbench.fake_quantize.lsq import LearnableFakeQuantize
 from dataset import get_dataloader
+from timm.models.swin_transformer import SwinTransformer
 from logger import get_logger
 from mqbench.utils.registry import DEFAULT_MODEL_QUANTIZER
 from torch.fx.graph_module import GraphModule
@@ -17,9 +18,14 @@ logger,workdir = get_logger("SwinQuant-qkv+Conv+Linear(tensorrt-default)")
 log = logger
 
 
-device = torch.device('cuda:2')
+device = torch.device('cuda')
 mean=np.array([123.675, 116.28, 103.53])/255
 std=np.array([58.395, 57.12, 57.375])/255
+
+class My(nn.Module):
+    def forward(self,x):
+        x = x*3
+        return x+x
 
 
 # dataloader = get_dataloader() #
@@ -44,8 +50,8 @@ extra_qconfig_dict = {
 }
 logger.info(extra_qconfig_dict) #  
 model = timm.create_model('swin_base_patch4_window7_224',pretrained=True).to(device) # 创建模型
+# model = timm.create_model('resnet18',pretrained=True).to(device) # 创建模型
 prepare_custom_config_dict = {'extra_qconfig_dict': extra_qconfig_dict}
-# model = prepare_by_platform(model, BackendType.Tensorrt, prepare_custom_config_dict).to(device)
 model = prepare_by_platform(model, BackendType.Tensorrt,prepare_custom_config_dict).to(device)
 ori= timm.create_model('swin_base_patch4_window7_224',pretrained=True).to(device) #
 model.eval() # 进行PTQ

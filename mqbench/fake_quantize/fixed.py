@@ -26,7 +26,7 @@ class FixedFakeQuantize(QuantizeBase):
                 self.scale.resize_(_scale.shape)
                 self.zero_point.resize_(_zero_point.shape)
             self.scale.copy_(_scale)
-            self.zero_point.copy_(_zero_point)
+            self.zero_point.copy_(_zero_point) #
 
         if self.fake_quant_enabled[0] == 1: # 是否允许量化
             if self.is_per_channel:
@@ -77,7 +77,7 @@ class FixedFakeQuantize(QuantizeBase):
                     self.zero_point.resize_(val.shape)
                 # For torchscript module we need to update the attributes here since we do not
                 # call the `_load_from_state_dict` function defined module.py
-                if torch.jit.is_scripting():
+                if torch.jit.is_cripting():
                     if name == 'scale':
                         self.scale.copy_(val)
                     else:
