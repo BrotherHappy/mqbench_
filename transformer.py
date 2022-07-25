@@ -6,6 +6,7 @@ from mqbench.utils.state import enable_calibration
 from mqbench.utils.state import enable_quantization
 from mqbench.convert_deploy import convert_deploy
 from tqdm import tqdm
+from timm.models.swin_transformer import SwinTransformer
 from mmcls.datasets.builder import build_dataset,build_dataloader
 from mmcls.datasets.builder import build_dataset,build_dataloader
 device = torch.device('cpu')

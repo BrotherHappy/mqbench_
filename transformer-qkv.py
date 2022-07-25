@@ -31,7 +31,7 @@ class My(nn.Module):
 # dataloader = get_dataloader() #
 extra_qconfig_dict = {
     'w_observer': 'MinMaxObserver',
-    'a_observer': 'EMAMinMaxObserver',
+    'a_observer': 'MSEObserver',
     'w_fakequantize': 'FixedFakeQuantize',
     'a_fakequantize': 'LearnableFakeQuantize',
     # 'a_fakequantize': 'FixedFakeQuantize',
