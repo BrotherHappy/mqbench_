@@ -44,7 +44,7 @@ class Dataset(Dataset):
 
 def get_dataloader():
     return DataLoader(dataset = ImageDataset(),batch_size=4,
-    shuffle=True,num_workers=8)
+    shuffle=True,num_workers=4)
 
 if __name__=="__main__":
     dataset = ImageDataset()
