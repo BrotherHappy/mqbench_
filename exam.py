@@ -19,14 +19,16 @@ print(DEFAULT_MODEL_QUANTIZER)
 logger,workdir = get_logger("SwinQuant-qkv+Conv+Linear(tensorrt-default)")
 device = torch.device('cuda:4')
 # device = torch.device('cpu')
+# device = torch.device('cpu')
 mean=np.array([123.675, 116.28, 103.53])/255
 std=np.array([58.395, 57.12, 57.375])/255
 
 dataloader = get_dataloader()
 extra_qconfig_dict = {
-    'w_observer': 'MSEObserver', # 
-    # 'a_observer': 'EMAMinMaxObserver',
-    'a_observer': 'MSEObserver',
+    # 'w_observer': 'MSEObserver', # 
+    'w_observer': 'MinMaxObserver', # 
+    'a_observer': 'EMAMinMaxObserver', # 
+    # 'a_observer': 'MSEObserver',
     'w_fakequantize': 'FixedFakeQuantize',
     'a_fakequantize': 'FixedFakeQuantize',
     # 'a_fakequantize': 'LearnableFakeQuantize',
@@ -44,6 +46,7 @@ extra_qconfig_dict = {
         'pot_scale': False
     }
 }
+
 logger.info(extra_qconfig_dict) # 
 
 model = timm.create_model('swin_base_patch4_window7_224',pretrained=True).to(device) #
@@ -101,7 +104,7 @@ class FindInput(Interpreter):
     def call_function(self, target , args , kwargs):
         ret = super().call_function(target,args,kwargs) # 首先得到最后的输出结果用来返回
         if target==torch.matmul:
-            self.d[self.name].append(self._tensor2numpy(args)+[ret.detach().cpu().numpy()])
+            # self.d[self.name].append(self._tensor2numpy(args)+[ret.detach().cpu().numpy()])
             # for a in args:
             #     print(a.shape)
             # print(kwargs)
@@ -117,10 +120,10 @@ with torch.no_grad():
         if i>4:
             break
         img = img.to(device)
+        find.run(img)
+        find_ori.run(img)
         acc.update(find.run(img).detach().cpu(),label.cpu())
         ori_acc.update(find_ori.run(img).detach().cpu(),label.cpu())
-
-
 ## 原本的hook形式，后来发现行不通
 # with torch.no_grad():
 #     for i,(img,label) in enumerate(tqdm(dataloader)):
@@ -132,4 +135,3 @@ with torch.no_grad():
 #         ori_acc.update(ori(img).detach().cpu(),label.cpu())
 print(f"最终的精度是：{acc.compute()}")
 print(f"ori的精度:{ori_acc.compute()}")
-

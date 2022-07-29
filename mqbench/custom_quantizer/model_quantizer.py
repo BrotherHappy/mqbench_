@@ -179,9 +179,10 @@ class ModelQuantizer(object):
             # operator.mul, 
             # torch.add,
             # torch.mul,
-            torch.matmul,
+            # torch.matmul,
             # torch.nn.functional.adaptive_avg_pool2d, # 
             # torch.nn.functional.interpolate
+            torch.softmax
         ] + self.additional_function_type
 
     @property
@@ -192,19 +193,20 @@ class ModelQuantizer(object):
             # torch.nn.intrinsic.qat.modules.conv_fused.ConvBn2d,     # 
             # torch.nn.qat.modules.conv.Conv2d,
             # ConvTranspose
-            torch.nn.ConvTranspose2d,
+            # torch.nn.ConvTranspose2d,
             # Linear
             # torch.nn.qat.modules.linear.Linear,
             # Pooling
-            torch.nn.modules.pooling.MaxPool2d,
-            torch.nn.modules.pooling.AvgPool2d,
-            torch.nn.modules.pooling.AdaptiveAvgPool2d,
+            # torch.nn.modules.pooling.MaxPool2d,
+            # torch.nn.modules.pooling.AvgPool2d,
+            # torch.nn.modules.pooling.AdaptiveAvgPool2d,
             # BN
-            torch.nn.BatchNorm2d,
+            # torch.nn.BatchNorm2d,
             # Prelu mostly do not merge.
-            torch.nn.PReLU,
-            # Upsample
-            torch.nn.Upsample
+            # torch.nn.PReLU,
+            # Upsample,
+            # torch.nn.Upsample,
+            torch.nn.Softmax,
         ) + self.additional_module_type
 
     def _flatten_args(self, node):
@@ -273,6 +275,6 @@ class ModelQuantizer(object):
                     reassign[name].weight_fake_quant.ch_axis = 1
                     reassign[name].weight_fake_quant.activation_post_process.ch_axis = 1
         for key, value in reassign.items(): # 进行这一层的置换工作
-            module._modules[key] = value
+            module._modules[key] = value 
 
         return module

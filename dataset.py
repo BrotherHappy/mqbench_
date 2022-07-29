@@ -29,6 +29,7 @@ class ImageDataset(Dataset):
         try:
             img = self.transform(img)
         except Exception as e:
+            print(e)
             print('transforme err',self.ann[idx])
         
         return img,self.ann[idx][1]
@@ -42,9 +43,9 @@ class Dataset(Dataset):
     def __getitem__(self,idx):
         pass
 
-def get_dataloader():
-    return DataLoader(dataset = ImageDataset(),batch_size=4,
-    shuffle=True,num_workers=4)
+def get_dataloader(batch_size = 32,shuffle=False):
+    return DataLoader(dataset = ImageDataset(),batch_size=batch_size,
+    shuffle=False,num_workers=16)
 
 if __name__=="__main__":
     dataset = ImageDataset()
