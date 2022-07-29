@@ -15,4 +15,6 @@ build/
 
 # macOS
 *.DS_Store
-# 
+# customed folders
+work_dirs/
+imgs/
