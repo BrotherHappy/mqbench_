@@ -87,3 +87,45 @@ class FixedFakeQuantize(QuantizeBase):
                 missing_keys.append(key)
         super(FixedFakeQuantize, self)._load_from_state_dict(state_dict, prefix, local_metadata, strict,
                                                              missing_keys, unexpected_keys, error_msgs)
+
+class SoftmaxFakeQuantize(QuantizeBase):
+    def __init__(self, observer, **observer_kwargs):
+        super(FixedFakeQuantize, self).__init__(observer, **observer_kwargs) # 定点量化，就是注册了一个scale和zero_point的buffer
+        self.register_buffer('scale', torch.tensor([1.0], dtype=torch.float)) # 
+        self.register_buffer('zero_point', torch.tensor([0], dtype=torch.int))
+        self.load_state_dict_hook = PerChannelLoadHook(self) # 实例化一个加载状态字典的Hook
+
+    def forward(self, X):
+        if isinstance(X,int): return X
+        # if isinstance(X,int):X = torch.tensor(X).float() # todo remove it
+        if self.observer_enabled[0] == 1: # 是否允许观察
+            self.activation_post_process(X.detach()) # 对X进行预处理
+            _scale, _zero_point = self.calculate_qparams() # 计算 scale和zeropint
+            _scale, _zero_point = _scale.to(self.scale.device), _zero_point.to(self.zero_point.device)
+            if self.scale.shape != _scale.shape: # 可以看出在这里已经解决了初始化时候的scale shape像是只支持per-tensor的问题
+                self.scale.resize_(_scale.shape)
+                self.zero_point.resize_(_zero_point.shape)
+            self.scale.copy_(_scale)
+            self.zero_point.copy_(_zero_point) #
+
+        if self.fake_quant_enabled[0] == 1: # 是否允许量化
+            if self.is_per_channel:
+                X = torch.fake_quantize_per_channel_affine( # 调用torch的前向量化操作
+                    X, self.scale,
+                    self.zero_point.long() if _version_under_1100 else self.zero_point,
+                    self.ch_axis, self.quant_min, self.quant_max)
+            else:
+                X = torch.fake_quantize_per_tensor_affine(
+                    X, self.scale.item(), int(self.zero_point.item()),
+                    self.quant_min, self.quant_max)
+        return X
+
+    @torch.jit.export
+    def extra_repr(self):
+        return 'fake_quant_enabled={}, observer_enabled={}, ' \
+               'quant_min={}, quant_max={}, dtype={}, qscheme={}, ch_axis={}, ' \
+               'scale={}, zero_point={}'.format(
+                   self.fake_quant_enabled, self.observer_enabled,
+                   self.quant_min, self.quant_max,
+                   self.dtype, self.qscheme, self.ch_axis, self.scale if self.ch_axis == -1 else 'List', 
+                   self.zero_point if self.ch_axis == -1 else 'List')

@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Any, Dict
 import types
 import inspect
-
+#TODO  可以增加根据Module类别匹配 Qconfig的格式。
 import torch
 from torch.fx import Tracer
 from torch.fx.graph_module import GraphModule

@@ -181,32 +181,33 @@ class ModelQuantizer(object):
             # torch.mul,
             # torch.matmul,
             # torch.nn.functional.adaptive_avg_pool2d, # 
-            # torch.nn.functional.interpolate
-            torch.softmax
+            # torch.nn.functional.interpolate,
+            # torch.softmax
         ] + self.additional_function_type
 
     @property
     def module_type_to_quant_input(self) -> tuple:
         return (
-            # Conv
+            # # Conv
             # torch.nn.intrinsic.qat.modules.conv_fused.ConvBnReLU2d, # 因为会做融合，所以不需要ReLU
             # torch.nn.intrinsic.qat.modules.conv_fused.ConvBn2d,     # 
             # torch.nn.qat.modules.conv.Conv2d,
-            # ConvTranspose
+            # # ConvTranspose
             # torch.nn.ConvTranspose2d,
-            # Linear
+            # # Linear
             # torch.nn.qat.modules.linear.Linear,
-            # Pooling
+            # torch.nn.Linear,
+            # # Pooling
             # torch.nn.modules.pooling.MaxPool2d,
             # torch.nn.modules.pooling.AvgPool2d,
             # torch.nn.modules.pooling.AdaptiveAvgPool2d,
-            # BN
+            # # BN
             # torch.nn.BatchNorm2d,
-            # Prelu mostly do not merge.
+            # # Prelu mostly do not merge.
             # torch.nn.PReLU,
-            # Upsample,
+            # # Upsample,
             # torch.nn.Upsample,
-            torch.nn.Softmax,
+            # torch.nn.Softmax,
         ) + self.additional_module_type
 
     def _flatten_args(self, node):

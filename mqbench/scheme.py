@@ -2,7 +2,7 @@ import torch
 
 
 class QuantizeScheme(object):
-    """Describe quantization scheme.
+    """Describe quantization scheme. 用来描述量化方式
     """
     def __init__(self, symmetry=True, per_channel=False, pot_scale=False, bit=8, **kwargs):
         self.symmetry = symmetry
