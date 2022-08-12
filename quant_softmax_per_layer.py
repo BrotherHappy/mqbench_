@@ -8,21 +8,25 @@ class MySoftmaxQAT(nn.Module):
         super().__init__()
         assert qconfig,"qconfig must be provided"
         self.qconfig = qconfig
+        self.pre_fake_quant = qconfig.activation()
         self.input_fake_quant = qconfig.activation()
         # self.register_buffer('map',torch.exp(torch.zeros(255)))
-    def forward(self,X): # 执行我自定义的量化
+    #TODO 找到了一个bug 在ViT中找到了问题。
+    def forward(self,X): # 执行我自定义的量化 
+        X = self.pre_fake_quant(X)
+        X = X-X.max(dim=-1,keepdim=True)[0] # 发现了bug，预计可以通过这种的过程修复
         if self.input_fake_quant.observer_enabled[0]==1:
             X = self.input_fake_quant(X)
-            return X
+            return X.softmax(-1)
         #output=min(quant_max,max(quant_min,std::nearby_int(input/scale)+zero_point))
         # 如果校准完成就执行
         if self.input_fake_quant.fake_quant_enabled[0]==1: # 开始量化，进行自定义
             device = X.device
             _scale,_zero_point = self.input_fake_quant.calculate_qparams()
             qmin,qmax = self.input_fake_quant.activation_post_process.quant_min,self.input_fake_quant.quant_max
-            X = torch.clamp(X/_scale+_zero_point,qmin,qmax).round() # 量化
+            X_ = torch.clamp(X/_scale+_zero_point,qmin,qmax).round() # 量化
             # map = torch.exp((torch.arange(-128,127+1,1,device=device)-_zero_point)*_scale).to(device) # 构建图
-            map = torch.exp((torch.arange(qmin,qmax+1,1,device=device)-_zero_point)*_scale).to(device) # 构建图
+            map = torch.exp((torch.arange(qmin,qmax+1,1,device=device)-_zero_point)*_scale).to(device) # 构建图 对于所有的情况下
 
             # # 用来进行查表法
             # map = torch.exp((torch.arange(-128,127+2,1,device=device)-_zero_point)*(_scale<<8)).to(device) # 构建图
@@ -34,7 +38,7 @@ class MySoftmaxQAT(nn.Module):
             # map = torch.exp((torch.arange(qmin,qmax+1,1,device=device)-_zero_point)*_scale).to(device) # 构建图
             
             # Y = map[(X+128).long()] # 256个表不需要查表插值，但是如果16位的表的话需要引入插值
-            Y = map[(X-qmin).long()] # 256个表不需要查表插值，但是如果16位的表的话需要引入插值
+            Y = map[(X_-qmin).long()] # 256个表不需要查表插值，但是如果16位的表的话需要引入插值
             # return ((Y<<15).long() // ((Y.sum(dim=-1,keepdim=True)<<8).long())).float()>>7  # 除法怎么解决
             return Y/Y.sum(dim=-1,keepdim=True)
             # X = torch.fake_quantize_per_tensor_affine(X)
@@ -66,7 +70,7 @@ print(DEFAULT_MODEL_QUANTIZER)
 logger,workdir = get_logger("softmax_quant")
 log = logger # 
 
-device = torch.device('cuda')
+device = torch.device('cuda:2')
 st.M = st.M.to(device)
 mean=np.array([123.675, 116.28, 103.53])/255
 std=np.array([58.395, 57.12, 57.375])/255
@@ -74,7 +78,7 @@ std=np.array([58.395, 57.12, 57.375])/255
 # dataloader = get_dataloader() #
 extra_qconfig_dict = {
     'w_observer': 'MinMaxObserver',
-    'a_observer': 'EMAMinMaxObserver', # TODO 修改OBserver的格式一般还是使用EMAOBserver
+    'a_observer': 'MinMaxObserver', # TODO 修改OBserver的格式一般还是使用EMAOBserver
     # 'a_observer': 'MSEObserver',
     'w_fakequantize': 'FixedFakeQuantize',
     'a_fakequantize': 'FixedFakeQuantize',
@@ -82,30 +86,34 @@ extra_qconfig_dict = {
     # 'a_fakequantize': 'FixedFakeQuantize',
     'w_qscheme': {
         'bit': 8,
-        'symmetry': True,
+        'symmetry': False,
         'per_channel': False,
         'pot_scale': False
     },
     'a_qscheme': {
         'bit': 8,
-        'symmetry': True,
+        'symmetry': False,
         'per_channel': False,
         'pot_scale': False
     },
 }
+
 extra_quantizer_dict = {
     'additional_module_type':(MySoftmax,nn.Softmax)
 }
 extra_fuse_dict = { # 用来完成qat模型的替换
     'additional_qat_module_mapping':{nn.Softmax:MySoftmaxQAT}
 }
+
 logger.info(extra_qconfig_dict) #  
-model = timm.create_model('swin_base_patch4_window7_224',pretrained=True).to(device) # 创建模型
-# model = timm.create_model('vit_base_patch8_224',pretrained=True).to(device)
+# model = timm.create_model('swin_base_patch4_window7_224',pretrained=True).to(device) # 创建模型
+model = timm.create_model('vit_base_patch8_224',pretrained=True).to(device)
 prepare_custom_config_dict = {'extra_qconfig_dict': extra_qconfig_dict,'extra_fuse_dict':extra_fuse_dict,'leaf_module':[MySoftmax,nn.Softmax],'extra_quantizer_dict':extra_quantizer_dict}
 model = prepare_by_platform(model, BackendType.Tensorrt,prepare_custom_config_dict).to(device)
-ori= timm.create_model('swin_base_patch4_window7_224',pretrained=True).to(device) #
-# ori = timm.create_model('vit_base_patch8_224',pretrained=True).to(device)
+# ori= timm.create_model('swin_base_patch4_window7_224',pretrained=True).to(device) #
+ori = timm.create_model('vit_base_patch8_224',pretrained=True).to(device)
+
+model.to(device)
 model.eval() # 进行PTQ
 enable_calibration(model) # 打开校准
 dataloader = get_dataloader(shuffle=False) #

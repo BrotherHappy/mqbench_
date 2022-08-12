@@ -85,9 +85,9 @@ def hook_generator(d,name):
 #     if name.endswith("softmax"):
 #         m.register_forward_hook(hook_generator(d_ori,name))
 
-# for name,m in model.named_modules():
-#     if name.endswith("softmax"):
-#         m.register_forward_hook(hook_generator(d_quant,name))
+for name,m in model.named_modules():
+    if name.endswith("softmax"):
+        m.register_forward_hook(hook_generator(d_quant,name))
 
 # model = ori
 acc = Accuracy()

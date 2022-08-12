@@ -244,6 +244,9 @@ class EMAMinMaxObserver(ObserverBase):
                                                 ch_axis, pot_scale, factory_kwargs)
         self.ema_ratio = ema_ratio
 
+    def __repr__(self):
+        return self.__class__.__name__+f"ema_ratio{self.ema_ratio}"
+
     def forward(self, x_orig):
         r"""Records the running minimum and maximum of ``x``."""
         if x_orig.numel() == 0:
@@ -357,6 +360,9 @@ class EMAQuantileObserver(ObserverBase):
         self.threshold = threshold
         self.bins = bins
 
+    def __repr__(self):
+        return self.__class__.__name__+f"ema_ratio{self.ema_ratio}"
+        pass
     def forward(self, x_orig):
         r"""Records the running minimum and maximum of ``x``."""
         if x_orig.numel() == 0:
