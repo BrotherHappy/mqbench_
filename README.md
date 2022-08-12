@@ -1,7 +1,4 @@
-<div align="center">
-    <img src="resources/logo.png" width="700" />
-</div>
-
+# 当前大卫组维护的MQBench,逐步迭代更新功能中。
 ------------
 [![Documentation Status](https://readthedocs.org/projects/mqbench/badge/?version=latest)](https://mqbench.readthedocs.io/en/latest/?badge=latest)
 [![Lint and test.](https://github.com/ModelTC/MQBench/actions/workflows/python-package-conda.yml/badge.svg?branch=main)](https://github.com/ModelTC/MQBench/actions/workflows/python-package-conda.yml)
@@ -30,20 +27,5 @@ MQBench aims to support (1) various deployable quantization algorithms and (2) h
 
 For the detailed information, please refer to [MQBench documentation](https://mqbench.readthedocs.io/en/latest/).
 
-## Citation
-
-If you use this toolkit or benchmark in your research, please cite this project.
-
-```latex
-@article{MQBench,
-  title   = {MQBench: Towards Reproducible and Deployable Model Quantization Benchmark},
-  author  = {Yuhang Li* and Mingzhu Shen* and Jian Ma* and Yan Ren* and Mingxin Zhao* and
-             Qi Zhang* and Ruihao Gong* and Fengwei Yu and Junjie Yan},
-  journal= {Proceedings of the Neural Information Processing Systems Track on Datasets and Benchmarks},
-  year={2021}
-}
-```
-
 ## License
-
 This project is released under the [Apache 2.0 license](LICENSE).
