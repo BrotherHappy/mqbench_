@@ -30,6 +30,7 @@ from torch.quantization.quantize_fx import (
     _fuse_fx
 )
 
+from mqbench.utils import getitem2node
 from mqbench.utils.logger import logger
 from mqbench.utils.registry import register_model_quantizer
 from mqbench.prepare_by_platform import BackendType
@@ -144,10 +145,10 @@ class ModelQuantizer(object):
         if (node.op == "call_module" and type(modules[node.target]) == cur_pattern) or \
                 ((node.op == 'call_function' or node.op == 'call_method') and # 判断当前节点的target是否符合当前的模式
                     node.target == cur_pattern):
-            # Means compairing pair.
-            if len(pattern) > p_pos and len(pair) > v_pos: # 如果模式长度大于当前索引并且 pair长度大于v_pos,
+            # Means comparing pair.
+            if len(pattern) > p_pos and len(pair) > v_pos:
                 return self._on_merge_chain(modules, pattern, pair, p_pos + 1, v_pos + 1)
-            # Means compairing extra node.
+            # Means comparing extra node.
             matched = False
             flatten_args = self._flatten_args(node.args)
             for _arg in flatten_args:
@@ -227,7 +228,8 @@ class ModelQuantizer(object):
     def _find_act_quants(self, model: GraphModule) -> List: # 找需要量化的节点
         nodes = list(model.graph.nodes) 
         modules = dict(model.named_modules())
-        node_need_to_quantize_output = [] # 
+        node_need_to_quantize_output = []
+        g2node = getitem2node(model)
         for node in nodes:
             if ((node.op == "call_module" and node.target in self.exclude_module_name) or # 在指定的 exclude列表中则不考虑
                 ((node.op == 'call_function' or node.op == 'call_method') and
@@ -237,15 +239,17 @@ class ModelQuantizer(object):
                 continue
             if (node.op == "call_module" and isinstance(modules[node.target], self.module_type_to_quant_input)) or \
                 ((node.op == 'call_function' or node.op == 'call_method') and
-                    node.target in self.function_type_to_quant_input) or node.name in self.additional_node_name: # 找需要加入的(node.op.target是我想要量化的)
-                input_node_list = self._flatten_args(node.args) # 找到这个node的 args(相当于依赖的输入参数)
-                # Means this is not Tensor + Tensor.
-                if not all([isinstance(_node, torch.fx.node.Node) for _node in input_node_list]): # 
-                    continue
-                for _node in input_node_list: # 对每个输入参数，如果它被隐式的包括了，就不会被加入到需要被量化输出的act结点,否则就加入需要被量化的结点 # 目前看到的模式是(torch.add,torch.mul)
-                    if self._is_implicit_merge(modules, (node, _node)): # 如果node是+并且_node是乘法,那么会被判定为隐式合并 (TODO 不懂为什么这么做)
+                    node.target in self.function_type_to_quant_input) or node.name in self.additional_node_name:
+                input_node_list = self._flatten_args(node.args) # 找到这个node的args，相当于以来的输入参数
+                input_node_list = [_node for _node in input_node_list if isinstance(_node, torch.fx.node.Node)]
+                for _node in input_node_list:
+                    if self._is_implicit_merge(modules, (node, _node)):
                         logger.info("Implicit merge: {} + {}".format(_node.name, node.name))
                         continue
+                    if _node in node_need_to_quantize_output:
+                        continue
+                    if _node in g2node:
+                        _node = g2node[_node]
                     node_need_to_quantize_output.append(_node)
         return node_need_to_quantize_output
 
@@ -270,12 +274,8 @@ class ModelQuantizer(object):
                 continue
             if not isinstance(mod, _FusedModule):# _FusedModule继承了Sequential(仅仅当做一个特殊的标记而已),如果不是就递归调用_convert。指定新scope
                 self._convert(mod, mapping, True, new_scope)
-            reassign[name] = swap_module(mod, mapping, {}) # 用resign来保存置换过后的 模型(从一般的办成了QAT模型). 
-            if isinstance(mod, torch.nn.ConvTranspose2d): # 对反卷积做特殊对待
-                if hasattr(reassign[name], "weight_fake_quant") and reassign[name].weight_fake_quant.ch_axis != -1:
-                    reassign[name].weight_fake_quant.ch_axis = 1
-                    reassign[name].weight_fake_quant.activation_post_process.ch_axis = 1
-        for key, value in reassign.items(): # 进行这一层的置换工作
-            module._modules[key] = value 
+            reassign[name] = swap_module(mod, mapping, {})
+        for key, value in reassign.items():
+            module._modules[key] = value
 
         return module

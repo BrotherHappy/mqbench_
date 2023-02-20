@@ -1,10 +1,6 @@
 import os
 from collections import OrderedDict
 
-import onnx
-from onnx import numpy_helper
-from onnxsim import simplify
-
 from ..utils.logger import logger
 from .deploy_linear import (
     LinearQuantizer_process,
@@ -19,6 +15,14 @@ from .common import (
     OnnxPreprocess,
     get_constant_inputs
 )
+
+import onnx
+from onnx import numpy_helper
+try:
+    from onnxsim import simplify
+except ModuleNotFoundError:
+    logger.warn('onnxsim not found, if you want to use deploy_tengine, please install it.')
+
 
 
 class Tengine_process(LinearQuantizer_process):
@@ -80,11 +84,11 @@ class Tengine_process(LinearQuantizer_process):
                     # by fusing conv+relu, conv+relu6
                     # ref: https://github.com/OAID/Tengine/blob/cdb4ccf77c04a0a771ec6a43631b9d25acd2bae1/tools/convert_tool/utils/graph_optimizer/graph_opt.cpp#L941
                     pre_node = out2node.get(tensor_name, None)
-                    if pre_node and pre_node.op_type in {"Clip", "ReLU"}:
+                    if pre_node and pre_node.op_type in {"Clip", "Relu"}:
                         # suppose onnx version be 11
                         # for relu6
                         if pre_node.op_type == "Clip" and \
-                            not (self.get_constant(out2node[pre_node.input[1]]) == 0 and 
+                            not (self.get_constant(out2node[pre_node.input[1]]) == 0 and
                                  self.get_constant(out2node[pre_node.input[2]]) == 6):
                             continue
 

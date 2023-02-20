@@ -1,7 +1,7 @@
 # 当前大卫组维护的MQBench,逐步迭代更新功能中。
 ------------
 [![Documentation Status](https://readthedocs.org/projects/mqbench/badge/?version=latest)](https://mqbench.readthedocs.io/en/latest/?badge=latest)
-[![Lint and test.](https://github.com/ModelTC/MQBench/actions/workflows/python-package-conda.yml/badge.svg?branch=main)](https://github.com/ModelTC/MQBench/actions/workflows/python-package-conda.yml)
+[![Lint and test](https://github.com/ModelTC/MQBench/actions/workflows/lint-and-test.yml/badge.svg?branch=main)](https://github.com/ModelTC/MQBench/actions/workflows/lint-and-test.yml)
 [![license](https://img.shields.io/github/license/ModelTC/MQBench)](https://github.com/ModelTC/MQBench/blob/main/LICENSE)
 
 ## Introduction

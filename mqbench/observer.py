@@ -1,12 +1,13 @@
 import math
-from functools import partial
 from typing import Tuple
-from copy import deepcopy
+
 import torch
 from torch.quantization.observer import _ObserverBase
 
+from mqbench.fake_quantize.quantize_base import _version_under_1100 
 from mqbench.utils import sync_tensor, pot_quantization, is_symmetric_quant
 from mqbench.utils.logger import logger
+from mqbench.utils.hook import PerChannelLoadHook
 
 
 class ObserverBase(_ObserverBase): # 继承了pytorch的_ObserverBase
@@ -28,40 +29,20 @@ class ObserverBase(_ObserverBase): # 继承了pytorch的_ObserverBase
     def __init__(self, dtype=torch.quint8, qscheme=torch.per_tensor_affine,
                  reduce_range=False, quant_min=None, quant_max=None, ch_axis=-1, pot_scale=False,
                  factory_kwargs=None):
-        factory_kwargs = deepcopy(factory_kwargs)
-        self.not_calc_quant_min_max = factory_kwargs.pop('not_calc_quant_min_max', False) if isinstance(factory_kwargs, dict) else False # 这个变量表示是否需要计算min max而是指定
+        # Since torch 1.10, function calculate_qmin_qmax is not a member function of observer,
+        # but import from utils. It is hard to control. We use try...except here.
+        stored_min, sotred_max = quant_min, quant_max
+        if quant_max is not None and quant_min is not None and (quant_max - quant_min + 1 > 256):
+            quant_min, quant_max = -128, 127
         super(ObserverBase, self).__init__(dtype, qscheme, reduce_range, quant_min, quant_max)
-        # for compatibility with 1.10, prevent the value of self.quant_min,self.quant_max being modified
-        self.quant_min = quant_min
-        self.quant_max = quant_max
+        self.quant_min = stored_min
+        self.quant_max = sotred_max
         self.quant_min, self.quant_max = self._calculate_qmin_qmax()
         self.ch_axis = ch_axis
         self.pot_scale = pot_scale
         self.register_buffer("min_val", torch.tensor(float("inf")))
         self.register_buffer("max_val", torch.tensor(float("-inf")))
-
-        class PerChannelLoadHook:
-            def __init__(self, module):
-                self.hook = module._register_load_state_dict_pre_hook(partial(self.hook_fn, module=module))
-
-            def hook_fn(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs,
-                        module):
-                if module.ch_axis == -1:
-                    # no per-channel parameters
-                    return # 直接返回
-                for module_key, param in module._buffers.items(): # 
-                    if module_key not in ['min_val', 'max_val']:
-                        continue
-                    candidate = prefix + module_key # 
-                    if candidate in state_dict:
-                        input_param = state_dict[candidate]
-                        if param.shape != input_param.shape:
-                            param.data = torch.ones_like(input_param, dtype=param.dtype, device=param.device)
-
-            def close(self):
-                self.hook.remove()
-
-        self.load_state_dict_hook = PerChannelLoadHook(self) # 加载状态字典hook,
+        self.load_state_dict_hook = PerChannelLoadHook(self)
 
     @torch.jit.export
     def calculate_qparams(self) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -79,28 +60,7 @@ class ObserverBase(_ObserverBase): # 继承了pytorch的_ObserverBase
         observer datatype and if range is reduced.
         """
         if self.has_customized_qrange:
-            # This initialization here is to be resolve TorchScript compilation issues and allow
-            # using of refinement to decouple initial_qmin and initial_qmax from quantization range.
-            # The actual values of initial_qmin and initial_qmax will be reset below.
-            initial_quant_min, initial_quant_max = 0, 255
-            # The following assignment of self.qmin and self.qmax to the local variables and the if check refine the
-            # attribute from Optional valid integers for use, based on TorchScript's requirements.
-            custom_quant_min, custom_quant_max = self.quant_min, self.quant_max
-            if custom_quant_min is not None and custom_quant_max is not None:
-                initial_quant_min, initial_quant_max = (
-                    custom_quant_min,
-                    custom_quant_max,
-                )
-
-            qrange_len = initial_quant_max - initial_quant_min + 1
-            if is_symmetric_quant(self.qscheme):
-                quant_min, quant_max = -qrange_len // 2, qrange_len // 2 - 1
-            else:
-                quant_min, quant_max = 0, qrange_len - 1
-            if self.reduce_range:
-                quant_min, quant_max = quant_min // 2, quant_max // 2
-            if self.not_calc_quant_min_max:
-                quant_min, quant_max = self.quant_min, self.quant_max
+            quant_min, quant_max = self.quant_min, self.quant_max
         else:
             # Fallback onto default 8-bit qmin and qmax calculation if dynamic range is not used.
             if self.dtype == torch.qint8:
@@ -456,7 +416,7 @@ class LSQObserver(ObserverBase):
             y = x.permute(new_axis_list)
             y = torch.flatten(y, start_dim=1)
             self.tensor_norm = y.abs().mean(1)
-            self.min_val, self.max_val = torch._aminmax(y)
+            self.min_val, self.max_val = torch._aminmax(y, 1)
 
         return x
 
@@ -468,8 +428,7 @@ class LSQObserver(ObserverBase):
         if self.pot_scale:
             scale = pot_quantization(scale)
         if not is_symmetric_quant(self.qscheme):
-            if self.min_val >= 0.:
-                zero_point = self.quant_min - torch.round(self.min_val / scale)
+            zero_point = self.quant_min - torch.round(self.min_val / scale)
         return scale, zero_point
 
 
@@ -570,7 +529,7 @@ class MSEObserver(ObserverBase):
             new_max = x_max * (1.0 - (i * 0.01))
             scale, zero_point = self._calculate_qparams(new_min, new_max)
             x_q = torch.fake_quantize_per_channel_affine(
-                x, scale, zero_point.long(), ch_axis, 
+                x, scale, zero_point.long() if _version_under_1100 else zero_point, ch_axis, 
                 self.quant_min, self.quant_max)
             score = self.lp_loss(x_q, x, reduce_dim)
             update_idx = (score < best_score)
@@ -649,7 +608,7 @@ class EMAMSEObserver(ObserverBase):
             new_max = x_max * (1.0 - (i * 0.01))
             scale, zero_point = self._calculate_qparams(new_min, new_max)
             x_q = torch.fake_quantize_per_channel_affine(
-                x, scale, zero_point.long(), ch_axis, 
+                x, scale, zero_point.long() if _version_under_1100 else zero_point, ch_axis, 
                 self.quant_min, self.quant_max)
             score = self.lp_loss(x_q, x, reduce_dim)
             update_idx = (score < best_score)
