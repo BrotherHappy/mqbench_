@@ -11,7 +11,7 @@ def read_requirements():
 
 
 setuptools.setup(
-    name="mqench",
+    name="mqbench",
     version=__version__,
     author="The Great Cold",
     author_email="",
