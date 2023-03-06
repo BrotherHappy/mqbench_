@@ -93,7 +93,7 @@ class ONNXGraph(object):
 
     def del_initializer(self, initializer_name):
         if initializer_name in self.initializer:
-            del(self.initializer[initializer_name])
+            del self.initializer[initializer_name]
 
     def optimize_model(self):
         # Delete redundant nodes.
@@ -223,6 +223,13 @@ def prepare_initializer(graph):
     for init in graph.initializer:
         named_initializer[init.name] = init
     return named_initializer
+
+
+def insert_initializer(graph, new_init):
+    for init in graph.initializer:
+        if init.name == new_init.name:
+            graph.initializer.remove(init)
+    graph.initializer.append(new_init)
 
 
 def parse_attrs(node_attrs):

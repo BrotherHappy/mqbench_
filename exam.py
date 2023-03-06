@@ -17,7 +17,7 @@ from timm.models.swin_transformer import SwinTransformer
 from torch.fx.graph_module import GraphModule
 print(DEFAULT_MODEL_QUANTIZER)
 logger,workdir = get_logger("SwinQuant-qkv+Conv+Linear(tensorrt-default)")
-device = torch.device('cuda:4')
+device = torch.device('cuda')
 # device = torch.device('cpu')
 # device = torch.device('cpu')
 mean=np.array([123.675, 116.28, 103.53])/255

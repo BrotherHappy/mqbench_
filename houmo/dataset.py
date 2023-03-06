@@ -14,7 +14,7 @@ from torch.utils.data import Dataset,DataLoader
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 class ImageDataset(Dataset):
-    def __init__(self,root='/data/datasets/imagenet/val'):
+    def __init__(self,root='/data01/datasets/imagenet/val'):
         super().__init__()
         # sorted_dirs = sorted(os.listdir(osp.join(root,'val')))
         sorted_dirs = sorted(os.listdir(root))
